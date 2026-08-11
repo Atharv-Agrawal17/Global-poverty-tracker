@@ -1,0 +1,19 @@
+{
+    "name": "Global Poverty Tracker",
+    "short_name": "Poverty Tracker",
+    "description": "Explore real global poverty data from the World Bank Poverty and Inequality Platform.",
+    "start_url": "./",
+    "display": "standalone",
+    "background_color": "#f4f6f8",
+    "theme_color": "#172a46",
+    "orientation": "portrait-primary",
+
+    "icons": [
+        {
+            "src": "logo.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}
