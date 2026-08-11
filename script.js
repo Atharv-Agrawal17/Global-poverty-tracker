@@ -1,1149 +1,343 @@
-/* =========================================================
-   GLOBAL POVERTY TRACKER
-   World Bank Poverty and Inequality Platform
-   ========================================================= */
-
-const API_BASE = "https://pip.worldbank.org/pip/v1";
-
-const POVERTY_LINE = 3;
+const API =
+  "https://pip.worldbank.org/pip/v1/pip";
 
 let povertyChart = null;
-let peopleChart = null;
-
-
-/* =========================================================
-   BASIC HELPERS
-   ========================================================= */
 
 function $(id) {
-    return document.getElementById(id);
+  return document.getElementById(id);
 }
-
 
 function showError(message) {
-    $("error").textContent = message;
-    $("error").classList.remove("hidden");
-}
+  const box = $("error");
 
+  if (box) {
+    box.textContent = message;
+    box.classList.remove("hidden");
+  }
+
+  console.error(message);
+}
 
 function clearError() {
-    $("error").classList.add("hidden");
+  const box = $("error");
+
+  if (box) {
+    box.classList.add("hidden");
+  }
 }
 
-
-function number(value, decimals = 2) {
-
+function getValue(row, names) {
+  for (const name of names) {
     if (
-        value === null ||
-        value === undefined ||
-        value === "" ||
-        !Number.isFinite(Number(value))
+      row[name] !== undefined &&
+      row[name] !== null &&
+      row[name] !== ""
     ) {
-        return "Unavailable";
+      return row[name];
     }
+  }
 
-    return Number(value).toLocaleString(
-        undefined,
-        {
-            maximumFractionDigits: decimals
-        }
-    );
+  return null;
 }
 
+async function getPovertyData(country) {
 
-function population(value) {
+  clearError();
 
-    if (
-        value === null ||
-        value === undefined ||
-        value === "" ||
-        !Number.isFinite(Number(value))
-    ) {
-        return "Unavailable";
-    }
+  const url =
+    `${API}?country_code=${encodeURIComponent(country)}`;
 
-    const n = Number(value);
+  console.log("Requesting:", url);
 
-    if (n >= 1000000) {
-        return (
-            (n / 1000000).toLocaleString(
-                undefined,
-                {
-                    maximumFractionDigits: 2
-                }
-            ) + " million"
-        );
-    }
-
-    return n.toLocaleString();
-}
-
-
-/* =========================================================
-   API REQUEST
-   ========================================================= */
-
-async function getJSON(url) {
-
-    const response = await fetch(url, {
-        method: "GET",
-        headers: {
-            "Accept": "application/json"
-        },
-        cache: "no-store"
+  const response =
+    await fetch(url, {
+      cache: "no-store"
     });
 
-    if (!response.ok) {
-        throw new Error(
-            `World Bank API error: HTTP ${response.status}`
-        );
-    }
+  if (!response.ok) {
+    throw new Error(
+      `World Bank API returned HTTP ${response.status}`
+    );
+  }
 
-    const text = await response.text();
+  const data =
+    await response.json();
 
-    if (!text) {
-        throw new Error(
-            "The World Bank API returned an empty response."
-        );
-    }
+  console.log("World Bank response:", data);
 
-    try {
-        return JSON.parse(text);
-    } catch {
-        throw new Error(
-            "The World Bank API returned data that was not valid JSON."
-        );
-    }
+  let rows = [];
+
+  if (Array.isArray(data)) {
+    rows = data;
+  } else if (Array.isArray(data.data)) {
+    rows = data.data;
+  } else if (Array.isArray(data.results)) {
+    rows = data.results;
+  }
+
+  if (!rows.length) {
+    throw new Error(
+      "The World Bank returned no poverty observations."
+    );
+  }
+
+  return rows;
 }
 
+function normalize(rows) {
 
-/* =========================================================
-   EXTRACT ARRAY
-   ========================================================= */
+  return rows
+    .map(row => {
 
-function getRows(data) {
+      const year =
+        getValue(row, [
+          "reporting_year",
+          "reportingYear",
+          "year"
+        ]);
 
-    if (Array.isArray(data)) {
-        return data;
-    }
+      const rate =
+        getValue(row, [
+          "headcount",
+          "headcount_ratio",
+          "headcountRatio",
+          "poverty_rate",
+          "povertyRate"
+        ]);
 
-    const possibleNames = [
-        "data",
-        "results",
-        "result",
-        "rows",
-        "records"
-    ];
+      return {
+        year: Number(year),
+        rate: Number(rate)
+      };
 
-    for (const name of possibleNames) {
-
-        if (Array.isArray(data?.[name])) {
-            return data[name];
-        }
-
-    }
-
-    return [];
+    })
+    .filter(row =>
+      Number.isFinite(row.year) &&
+      Number.isFinite(row.rate)
+    )
+    .sort((a, b) =>
+      a.year - b.year
+    );
 }
 
+function display(rows) {
 
-/* =========================================================
-   FIELD FINDER
-   ========================================================= */
+  if (!rows.length) {
+    throw new Error(
+      "No usable poverty-rate values were found."
+    );
+  }
 
-function field(row, names) {
+  const latest =
+    rows[rows.length - 1];
 
-    for (const name of names) {
+  const previous =
+    rows.length > 1
+      ? rows[rows.length - 2]
+      : null;
 
-        if (
-            row &&
-            row[name] !== undefined &&
-            row[name] !== null &&
-            row[name] !== ""
-        ) {
-            return row[name];
-        }
+  $("rate").textContent =
+    `${latest.rate.toFixed(2)}%`;
 
-    }
+  $("rateYear").textContent =
+    `Latest available observation: ${latest.year}`;
 
-    return null;
-}
+  if (previous) {
 
+    const change =
+      latest.rate - previous.rate;
 
-/* =========================================================
-   COUNTRY LIST
-   ========================================================= */
-
-async function loadCountries() {
-
-    clearError();
-
-    const selector = $("country");
-
-    selector.innerHTML =
-        "<option>Loading countries...</option>";
-
-    try {
-
-        const url =
-            `${API_BASE}/aux`;
-
-        const data =
-            await getJSON(url);
-
-        const rows =
-            getRows(data);
-
-        const countries =
-            new Map();
-
-
-        for (const row of rows) {
-
-            const code =
-                field(
-                    row,
-                    [
-                        "country_code",
-                        "countryCode",
-                        "countrycode",
-                        "code"
-                    ]
-                );
-
-            const name =
-                field(
-                    row,
-                    [
-                        "country_name",
-                        "countryName",
-                        "countryname",
-                        "name"
-                    ]
-                );
-
-            if (
-                code &&
-                name
-            ) {
-
-                countries.set(
-                    String(code),
-                    String(name)
-                );
-
-            }
-
-        }
-
-
-        /*
-         * Some versions of the auxiliary response
-         * use different field structures.
-         *
-         * If no country list is returned, use the
-         * official country codes below as a fallback.
-         *
-         * These are ONLY country codes/names.
-         * Poverty numbers are NEVER hard-coded.
-         */
-
-        if (countries.size === 0) {
-
-            const fallbackCountries = [
-
-                ["AFG", "Afghanistan"],
-                ["ALB", "Albania"],
-                ["DZA", "Algeria"],
-                ["ARG", "Argentina"],
-                ["AUS", "Australia"],
-                ["AUT", "Austria"],
-                ["BGD", "Bangladesh"],
-                ["BEL", "Belgium"],
-                ["BRA", "Brazil"],
-                ["CAN", "Canada"],
-                ["CHN", "China"],
-                ["COL", "Colombia"],
-                ["DNK", "Denmark"],
-                ["EGY", "Egypt"],
-                ["FIN", "Finland"],
-                ["FRA", "France"],
-                ["DEU", "Germany"],
-                ["GHA", "Ghana"],
-                ["GRC", "Greece"],
-                ["IND", "India"],
-                ["IDN", "Indonesia"],
-                ["IRL", "Ireland"],
-                ["ITA", "Italy"],
-                ["JPN", "Japan"],
-                ["KEN", "Kenya"],
-                ["MEX", "Mexico"],
-                ["NLD", "Netherlands"],
-                ["NZL", "New Zealand"],
-                ["NGA", "Nigeria"],
-                ["NOR", "Norway"],
-                ["PAK", "Pakistan"],
-                ["PER", "Peru"],
-                ["PHL", "Philippines"],
-                ["POL", "Poland"],
-                ["PRT", "Portugal"],
-                ["RUS", "Russia"],
-                ["SAU", "Saudi Arabia"],
-                ["SGP", "Singapore"],
-                ["ZAF", "South Africa"],
-                ["KOR", "South Korea"],
-                ["ESP", "Spain"],
-                ["LKA", "Sri Lanka"],
-                ["SWE", "Sweden"],
-                ["CHE", "Switzerland"],
-                ["TZA", "Tanzania"],
-                ["THA", "Thailand"],
-                ["TUR", "Türkiye"],
-                ["UGA", "Uganda"],
-                ["UKR", "Ukraine"],
-                ["ARE", "United Arab Emirates"],
-                ["GBR", "United Kingdom"],
-                ["USA", "United States"],
-                ["VNM", "Vietnam"],
-                ["ZMB", "Zambia"],
-                ["ZWE", "Zimbabwe"]
-
-            ];
-
-
-            for (
-                const [code, name]
-                of fallbackCountries
-            ) {
-
-                countries.set(
-                    code,
-                    name
-                );
-
-            }
-
-        }
-
-
-        const sorted =
-            Array.from(
-                countries.entries()
-            )
-            .sort(
-                (a, b) =>
-                    a[1].localeCompare(b[1])
-            );
-
-
-        selector.innerHTML = "";
-
-
-        for (
-            const [code, name]
-            of sorted
-        ) {
-
-            const option =
-                document.createElement("option");
-
-            option.value = code;
-
-            option.textContent =
-                `${name} (${code})`;
-
-            selector.appendChild(option);
-
-        }
-
-
-        /*
-         * Start with India because it is a useful
-         * test country and the World Bank currently
-         * reports a 2022 observation for it.
-         */
-
-        if (
-            countries.has("IND")
-        ) {
-
-            selector.value = "IND";
-
-            await loadCountry("IND");
-
-        } else {
-
-            await loadCountry(
-                sorted[0][0]
-            );
-
-        }
-
-    } catch (error) {
-
-        /*
-         * We still allow the application to work
-         * using the country-code fallback above.
-         */
-
-        console.error(error);
-
-        showError(
-            "The World Bank country directory could not be loaded. " +
-            "The app is using its built-in country list. " +
-            "Poverty figures will still be requested directly " +
-            "from the World Bank PIP API."
-        );
-
-
-        const fallback =
-            [
-                ["IND", "India"],
-                ["USA", "United States"],
-                ["GBR", "United Kingdom"],
-                ["FRA", "France"],
-                ["BRA", "Brazil"],
-                ["ZAF", "South Africa"],
-                ["NGA", "Nigeria"],
-                ["CHN", "China"]
-            ];
-
-
-        selector.innerHTML = "";
-
-
-        fallback.forEach(
-            ([code, name]) => {
-
-                const option =
-                    document.createElement("option");
-
-                option.value = code;
-
-                option.textContent =
-                    `${name} (${code})`;
-
-                selector.appendChild(option);
-
-            }
-        );
-
-
-        selector.value = "IND";
-
-        await loadCountry("IND");
-
-    }
-
-}
-
-
-/* =========================================================
-   LOAD COUNTRY POVERTY DATA
-   ========================================================= */
-
-async function loadCountry(code) {
-
-    clearError();
-
-
-    $("rate").textContent =
-        "Loading...";
-
-    $("poorPop").textContent =
-        "Loading...";
+    const percent =
+      previous.rate !== 0
+        ? (change / previous.rate) * 100
+        : null;
 
     $("change").textContent =
-        "Loading...";
+      `${change >= 0 ? "+" : ""}` +
+      `${change.toFixed(2)} percentage points`;
+
+    $("changeType").textContent =
+      percent === null
+        ? "Relative change unavailable"
+        :
+        `${percent >= 0 ? "+" : ""}` +
+        `${percent.toFixed(2)}% since ${previous.year}`;
+
+    if (change > 0.1) {
+      $("status").textContent =
+        "Increasing";
+    } else if (change < -0.1) {
+      $("status").textContent =
+        "Decreasing";
+    } else {
+      $("status").textContent =
+        "Stable";
+    }
+
+    $("statusDetail").textContent =
+      `Compared with ${previous.year}`;
+
+  } else {
+
+    $("change").textContent =
+      "Unavailable";
+
+    $("changeType").textContent =
+      "Only one observation";
 
     $("status").textContent =
-        "Loading...";
+      "Unavailable";
 
+    $("statusDetail").textContent =
+      "More observations required";
+  }
 
-    try {
+  drawChart(rows);
+}
 
-        /*
-         * Main World Bank PIP endpoint.
-         *
-         * We request:
-         * - country
-         * - $3.00/day poverty line
-         */
+function drawChart(rows) {
 
-        const url =
-            new URL(
-                `${API_BASE}/pip`
-            );
+  const canvas =
+    $("povertyChart");
 
+  if (!canvas) return;
 
-        url.searchParams.set(
-            "country_code",
-            code
-        );
+  if (povertyChart) {
+    povertyChart.destroy();
+  }
 
+  povertyChart =
+    new Chart(canvas, {
 
-        url.searchParams.set(
-            "poverty_line",
-            POVERTY_LINE
-        );
+      type: "line",
 
+      data: {
 
-        const data =
-            await getJSON(
-                url.toString()
-            );
+        labels:
+          rows.map(row =>
+            row.year
+          ),
 
+        datasets: [{
 
-        const rawRows =
-            getRows(data);
+          label:
+            "Poverty rate (%)",
 
+          data:
+            rows.map(row =>
+              row.rate
+            ),
 
-        if (
-            rawRows.length === 0
-        ) {
+          tension: 0.25,
 
-            throw new Error(
-                `No poverty observations were returned for ${code}.`
-            );
+          borderWidth: 2,
+
+          pointRadius: 3
+
+        }]
+
+      },
+
+      options: {
+
+        responsive: true,
+
+        maintainAspectRatio: false,
+
+        scales: {
+
+          y: {
+
+            beginAtZero: true,
+
+            title: {
+
+              display: true,
+
+              text:
+                "Population (%)"
+
+            }
+
+          }
 
         }
 
+      }
 
-        const rows =
-            rawRows
-                .map(normalizeRow)
-                .filter(
-                    row =>
-                        row.year !== null &&
-                        row.rate !== null
-                )
-                .sort(
-                    (a, b) =>
-                        a.year - b.year
-                );
-
-
-        if (
-            rows.length === 0
-        ) {
-
-            throw new Error(
-                `The World Bank returned data for ${code}, ` +
-                `but no usable $3.00/day poverty observations ` +
-                `were found.`
-            );
-
-        }
-
-
-        render(rows);
-
-    } catch (error) {
-
-        console.error(
-            "PIP error:",
-            error
-        );
-
-
-        $("rate").textContent =
-            "Unavailable";
-
-        $("poorPop").textContent =
-            "Unavailable";
-
-        $("change").textContent =
-            "Unavailable";
-
-        $("status").textContent =
-            "Unavailable";
-
-
-        $("rateYear").textContent =
-            "No usable observation";
-
-        $("poorYear").textContent =
-            "No usable observation";
-
-        $("changeType").textContent =
-            "—";
-
-        $("statusDetail").textContent =
-            "—";
-
-
-        showError(
-            "The World Bank PIP data could not be loaded for " +
-            code +
-            ". " +
-            error.message
-        );
-
-    }
-
+    });
 }
 
+async function loadCountry(country) {
 
-/* =========================================================
-   NORMALIZE PIP ROW
-   ========================================================= */
-
-function normalizeRow(row) {
-
-    /*
-     * Different PIP responses can expose fields
-     * with slightly different names.
-     */
-
-    const yearValue =
-        field(
-            row,
-            [
-                "reporting_year",
-                "reportingYear",
-                "year",
-                "survey_year",
-                "surveyYear"
-            ]
-        );
-
-
-    const rateValue =
-        field(
-            row,
-            [
-                "headcount",
-                "headcount_ratio",
-                "headcountRatio",
-                "poverty_rate",
-                "povertyRate",
-                "hc"
-            ]
-        );
-
-
-    const poorValue =
-        field(
-            row,
-            [
-                "poor",
-                "poor_pop",
-                "poor_population",
-                "poorpop"
-            ]
-        );
-
-
-    const typeValue =
-        field(
-            row,
-            [
-                "reporting_level",
-                "reportingLevel",
-                "data_type",
-                "dataType",
-                "survey_type",
-                "type"
-            ]
-        );
-
-
-    const year =
-        Number(yearValue);
-
-
-    const rate =
-        Number(rateValue);
-
-
-    let poor = null;
-
-
-    if (
-        poorValue !== null &&
-        Number.isFinite(
-            Number(poorValue)
-        )
-    ) {
-
-        poor =
-            Number(poorValue);
-
-    }
-
-
-    return {
-
-        year:
-            Number.isFinite(year)
-                ? year
-                : null,
-
-        rate:
-            Number.isFinite(rate)
-                ? rate
-                : null,
-
-        poor,
-
-        type:
-            typeValue ||
-            "World Bank PIP observation"
-
-    };
-
-}
-
-
-/* =========================================================
-   RENDER DASHBOARD
-   ========================================================= */
-
-function render(rows) {
-
-    const latest =
-        rows[
-            rows.length - 1
-        ];
-
-
-    const previous =
-        rows.length > 1
-            ? rows[
-                rows.length - 2
-            ]
-            : null;
-
-
-    /*
-     * Latest rate
-     */
+  try {
 
     $("rate").textContent =
-        `${number(latest.rate)}%`;
-
-
-    $("rateYear").textContent =
-        `Latest available observation: ${latest.year}`;
-
-
-    /*
-     * Population
-     */
+      "Loading...";
 
     $("poorPop").textContent =
-        population(
-            latest.poor
-        );
+      "—";
 
+    $("change").textContent =
+      "Loading...";
 
-    $("poorYear").textContent =
-        latest.poor === null
-            ? "PIP population field unavailable"
-            : `Associated observation: ${latest.year}`;
+    $("status").textContent =
+      "Loading...";
 
+    const rows =
+      await getPovertyData(country);
 
-    /*
-     * Change
-     */
+    const cleanRows =
+      normalize(rows);
 
-    if (previous) {
+    display(cleanRows);
 
-        const difference =
-            latest.rate -
-            previous.rate;
+  } catch (error) {
 
+    console.error(error);
 
-        const percentChange =
-            previous.rate !== 0
-                ? (
-                    difference /
-                    previous.rate
-                ) * 100
-                : null;
+    $("rate").textContent =
+      "Unavailable";
 
+    $("poorPop").textContent =
+      "Unavailable";
 
-        $("change").textContent =
-            `${difference >= 0 ? "+" : ""}` +
-            `${number(difference)} percentage points`;
+    $("change").textContent =
+      "Unavailable";
 
+    $("status").textContent =
+      "Unavailable";
 
-        $("changeType").textContent =
-            percentChange === null
-                ? "Relative percentage change unavailable"
-                :
-                `${percentChange >= 0 ? "+" : ""}` +
-                `${number(percentChange)}% ` +
-                `since ${previous.year}`;
-
-
-        if (
-            difference > 0.1
-        ) {
-
-            $("status").textContent =
-                "Increasing";
-
-        } else if (
-            difference < -0.1
-        ) {
-
-            $("status").textContent =
-                "Decreasing";
-
-        } else {
-
-            $("status").textContent =
-                "Stable";
-
-        }
-
-
-        $("statusDetail").textContent =
-            `Compared with ${previous.year}`;
-
-    } else {
-
-        $("change").textContent =
-            "Unavailable";
-
-        $("changeType").textContent =
-            "Only one observation";
-
-        $("status").textContent =
-            "Unavailable";
-
-        $("statusDetail").textContent =
-            "More observations required";
-
-    }
-
-
-    /*
-     * Table
-     */
-
-    $("dataTable").innerHTML =
-        rows
-            .slice()
-            .reverse()
-            .map(
-                row => `
-
-                <tr>
-
-                    <td>
-                        ${row.year}
-                    </td>
-
-                    <td>
-                        ${number(row.rate)}%
-                    </td>
-
-                    <td>
-                        ${
-                            population(
-                                row.poor
-                            )
-                        }
-                    </td>
-
-                    <td>
-                        ${
-                            row.type
-                        }
-                    </td>
-
-                </tr>
-
-                `
-            )
-            .join("");
-
-
-    /*
-     * Charts
-     */
-
-    drawCharts(rows);
-
+    showError(
+      "World Bank data could not be loaded: " +
+      error.message
+    );
+  }
 }
 
+if ($("country")) {
 
-/* =========================================================
-   DRAW CHARTS
-   ========================================================= */
-
-function drawCharts(rows) {
-
-    const labels =
-        rows.map(
-            row =>
-                String(row.year)
-        );
-
-
-    const rates =
-        rows.map(
-            row =>
-                row.rate
-        );
-
-
-    const poor =
-        rows.map(
-            row =>
-                row.poor
-        );
-
-
-    /*
-     * Poverty-rate chart
-     */
-
-    if (
-        povertyChart
-    ) {
-
-        povertyChart.destroy();
-
-    }
-
-
-    povertyChart =
-        new Chart(
-            $("povertyChart"),
-            {
-
-                type: "line",
-
-                data: {
-
-                    labels,
-
-                    datasets: [
-
-                        {
-
-                            label:
-                                "Poverty rate (%)",
-
-                            data:
-                                rates,
-
-                            tension:
-                                0.25,
-
-                            borderWidth:
-                                2,
-
-                            pointRadius:
-                                3
-
-                        }
-
-                    ]
-
-                },
-
-                options: {
-
-                    responsive:
-                        true,
-
-                    maintainAspectRatio:
-                        false,
-
-                    scales: {
-
-                        y: {
-
-                            beginAtZero:
-                                true,
-
-                            title: {
-
-                                display:
-                                    true,
-
-                                text:
-                                    "Population (%)"
-
-                            }
-
-                        }
-
-                    }
-
-                }
-
-            }
-        );
-
-
-    /*
-     * People-in-poverty chart
-     */
-
-    if (
-        peopleChart
-    ) {
-
-        peopleChart.destroy();
-
-    }
-
-
-    peopleChart =
-        new Chart(
-            $("peopleChart"),
-            {
-
-                type: "line",
-
-                data: {
-
-                    labels,
-
-                    datasets: [
-
-                        {
-
-                            label:
-                                "People in poverty",
-
-                            data:
-                                poor,
-
-                            tension:
-                                0.25,
-
-                            borderWidth:
-                                2,
-
-                            pointRadius:
-                                3
-
-                        }
-
-                    ]
-
-                },
-
-                options: {
-
-                    responsive:
-                        true,
-
-                    maintainAspectRatio:
-                        false,
-
-                    scales: {
-
-                        y: {
-
-                            beginAtZero:
-                                true,
-
-                            title: {
-
-                                display:
-                                    true,
-
-                                text:
-                                    "People"
-
-                            }
-
-                        }
-
-                    }
-
-                }
-
-            }
-        );
-
-}
-
-
-/* =========================================================
-   COUNTRY SELECTOR
-   ========================================================= */
-
-$("country").addEventListener(
+  $("country").addEventListener(
     "change",
     event => {
-
-        loadCountry(
-            event.target.value
-        );
-
+      loadCountry(event.target.value);
     }
-);
-
-
-/* =========================================================
-   REFRESH BUTTON
-   ========================================================= */
-
-$("refresh").addEventListener(
-    "click",
-    () => {
-
-        loadCountry(
-            $("country").value
-        );
-
-    }
-);
-
-
-/* =========================================================
-   SERVICE WORKER
-   ========================================================= */
-
-if (
-    "serviceWorker" in navigator
-) {
-
-    window.addEventListener(
-        "load",
-        () => {
-
-            navigator.serviceWorker
-                .register(
-                    "./service-worker.js"
-                )
-                .then(
-                    registration => {
-
-                        console.log(
-                            "Poverty Tracker service worker active.",
-                            registration.scope
-                        );
-
-                    }
-                )
-                .catch(
-                    error => {
-
-                        console.warn(
-                            "Service worker unavailable:",
-                            error
-                        );
-
-                    }
-                );
-
-        }
-    );
-
+  );
 }
 
+if ($("refresh")) {
 
-/* =========================================================
-   START
-   ========================================================= */
+  $("refresh").addEventListener(
+    "click",
+    () => {
+      loadCountry(
+        $("country").value
+      );
+    }
+  );
+}
 
-loadCountries();
+/*
+  Start with India.
+*/
+loadCountry("IND");
