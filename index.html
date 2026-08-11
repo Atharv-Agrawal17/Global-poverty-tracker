@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <!-- Website icon -->
+    <link rel="icon"
+          type="image/png"
+          href="logo.png">
+
+    <!-- Phone home-screen icon -->
+    <link rel="apple-touch-icon"
+          href="logo.png">
+
+    <!-- Progressive Web App -->
+    <link rel="manifest"
+          href="manifest.json">
+
+    <!-- App theme -->
+    <meta name="theme-color"
+          content="#172a46">
+
+    <!-- iPhone/iPad -->
+    <meta name="apple-mobile-web-app-capable"
+          content="yes">
+
+    <meta name="apple-mobile-web-app-status-bar-style"
+          content="black-translucent">
+
+    <meta name="apple-mobile-web-app-title"
+          content="Poverty Tracker">
+
+    <title>Global Poverty Tracker</title>
+
+    <link rel="stylesheet"
+          href="style.css">
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+</head>
+
+
+<body>
+
+
+<!-- =====================================================
+     HEADER
+     ===================================================== -->
+
+<header class="hero">
+
+    <div class="wrap">
+
+        <p class="eyebrow">
+            GLOBAL POVERTY & INEQUALITY DATA
+        </p>
+
+        <h1>
+            Global Poverty Tracker
+        </h1>
+
+        <p>
+            Explore poverty statistics, trends and changes
+            across countries using World Bank data.
+        </p>
+
+    </div>
+
+</header>
+
+
+<main class="wrap">
+
+
+<!-- =====================================================
+     DATA NOTICE
+     ===================================================== -->
+
+<section class="notice">
+
+    <strong>
+        Data integrity:
+    </strong>
+
+    This dashboard uses data from the World Bank
+    Poverty and Inequality Platform.
+
+    Missing values are shown as unavailable rather than
+    being replaced with invented numbers.
+
+</section>
+
+
+<!-- =====================================================
+     COUNTRY SELECTOR
+     ===================================================== -->
+
+<section class="controls card">
+
+    <label for="country">
+
+        Select a country
+
+    </label>
+
+
+    <select id="country">
+
+        <option>
+            Loading countries...
+        </option>
+
+    </select>
+
+
+    <button id="refresh">
+
+        Refresh Data
+
+    </button>
+
+</section>
+
+
+<!-- =====================================================
+     ERROR MESSAGE
+     ===================================================== -->
+
+<section id="error"
+         class="error hidden">
+</section>
+
+
+<!-- =====================================================
+     STATISTICS
+     ===================================================== -->
+
+<section class="stats">
+
+
+    <article class="stat card">
+
+        <span>
+            Latest Poverty Rate
+        </span>
+
+        <strong id="rate">
+            —
+        </strong>
+
+        <small id="rateYear">
+            —
+        </small>
+
+    </article>
+
+
+    <article class="stat card">
+
+        <span>
+            People in Poverty
+        </span>
+
+        <strong id="poorPop">
+            —
+        </strong>
+
+        <small id="poorYear">
+            —
+        </small>
+
+    </article>
+
+
+    <article class="stat card">
+
+        <span>
+            Change in Poverty Rate
+        </span>
+
+        <strong id="change">
+            —
+        </strong>
+
+        <small id="changeType">
+            —
+        </small>
+
+    </article>
+
+
+    <article class="stat card">
+
+        <span>
+            Trend
+        </span>
+
+        <strong id="status">
+            —
+        </strong>
+
+        <small id="statusDetail">
+            —
+        </small>
+
+    </article>
+
+
+</section>
+
+
+<!-- =====================================================
+     GRAPHS
+     ===================================================== -->
+
+<section class="grid">
+
+
+    <article class="card chart-card">
+
+        <h2>
+            Poverty Rate Over Time
+        </h2>
+
+        <p class="muted">
+
+            Percentage of the population below the selected
+            international poverty line.
+
+        </p>
+
+        <canvas id="povertyChart"></canvas>
+
+    </article>
+
+
+    <article class="card chart-card">
+
+        <h2>
+            People Living in Poverty
+        </h2>
+
+        <p class="muted">
+
+            Population count where the World Bank dataset
+            provides the relevant measure.
+
+        </p>
+
+        <canvas id="peopleChart"></canvas>
+
+    </article>
+
+
+</section>
+
+
+<!-- =====================================================
+     DATA TABLE
+     ===================================================== -->
+
+<section class="card">
+
+    <h2>
+        Country Data
+    </h2>
+
+
+    <div class="table-wrap">
+
+        <table>
+
+            <thead>
+
+                <tr>
+
+                    <th>
+                        Year
+                    </th>
+
+                    <th>
+                        Poverty Rate
+                    </th>
+
+                    <th>
+                        People in Poverty
+                    </th>
+
+                    <th>
+                        Data Type
+                    </th>
+
+                </tr>
+
+            </thead>
+
+
+            <tbody id="dataTable">
+
+                <tr>
+
+                    <td colspan="4">
+
+                        Select a country to view data.
+
+                    </td>
+
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</section>
+
+
+<!-- =====================================================
+     ABOUT POVERTY
+     ===================================================== -->
+
+<section class="card info">
+
+    <h2>
+        What Does This Measure Mean?
+    </h2>
+
+
+    <p>
+
+        The main international indicator uses the World
+        Bank's international poverty line of
+
+        <strong>
+            $3.00 per person per day at 2021 PPP.
+        </strong>
+
+    </p>
+
+
+    <p>
+
+        This measure is intended for international
+        comparisons and is different from each country's
+        national poverty line.
+
+    </p>
+
+
+    <p>
+
+        Countries do not necessarily have observations
+        for the same year. The dashboard therefore
+        displays the actual year associated with each
+        available observation.
+
+    </p>
+
+</section>
+
+
+<!-- =====================================================
+     WHAT CAN WE DO
+     ===================================================== -->
+
+<section class="card help">
+
+    <h2>
+        What Can We Do?
+    </h2>
+
+
+    <p>
+
+        Understanding poverty is only the beginning.
+        Meaningful action can help address its causes
+        and effects.
+
+    </p>
+
+
+    <div class="help-grid">
+
+
+        <div>
+
+            <h3>
+                Education
+            </h3>
+
+            <p>
+
+                Support access to quality education,
+                learning and useful skills.
+
+            </p>
+
+        </div>
+
+
+        <div>
+
+            <h3>
+                Food Security
+            </h3>
+
+            <p>
+
+                Support trustworthy organizations working
+                to improve access to nutritious food.
+
+            </p>
+
+        </div>
+
+
+        <div>
+
+            <h3>
+                Clean Water
+            </h3>
+
+            <p>
+
+                Support projects improving access to
+                safe water and sanitation.
+
+            </p>
+
+        </div>
+
+
+        <div>
+
+            <h3>
+                Healthcare
+            </h3>
+
+            <p>
+
+                Support initiatives that improve access
+                to essential healthcare.
+
+            </p>
+
+        </div>
+
+
+        <div>
+
+            <h3>
+                Skills and Jobs
+            </h3>
+
+            <p>
+
+                Support training, skills development and
+                employment opportunities.
+
+            </p>
+
+        </div>
+
+
+        <div>
+
+            <h3>
+                Volunteer
+            </h3>
+
+            <p>
+
+                Volunteer with reputable organizations
+                working with communities.
+
+            </p>
+
+        </div>
+
+
+        <div>
+
+            <h3>
+                Responsible Giving
+            </h3>
+
+            <p>
+
+                Research organizations carefully before
+                donating.
+
+            </p>
+
+        </div>
+
+
+        <div>
+
+            <h3>
+                Sustainable Development
+            </h3>
+
+            <p>
+
+                Support long-term solutions involving
+                education, infrastructure and opportunity.
+
+            </p>
+
+        </div>
+
+
+    </div>
+
+
+    <p class="closing">
+
+        <strong>
+
+            Understanding poverty is the first step.
+            Using knowledge to support meaningful
+            solutions is the next.
+
+        </strong>
+
+    </p>
+
+</section>
+
+
+<!-- =====================================================
+     DATA SOURCES
+     ===================================================== -->
+
+<section class="card methodology">
+
+    <h2>
+        Data Sources and Methodology
+    </h2>
+
+
+    <p>
+
+        <strong>
+            Primary source:
+        </strong>
+
+        World Bank Poverty and Inequality Platform (PIP).
+
+    </p>
+
+
+    <p>
+
+        The dashboard is designed to retrieve poverty
+        statistics from the World Bank rather than
+        manually entering country values.
+
+    </p>
+
+
+    <p>
+
+        Poverty observations are not available for the
+        same years in every country.
+
+        Missing data is therefore displayed as
+        unavailable.
+
+    </p>
+
+
+    <p>
+
+        Always consider the observation year when
+        comparing countries.
+
+    </p>
+
+
+    <p>
+
+        <a href="https://pip.worldbank.org/api"
+           target="_blank"
+           rel="noopener">
+
+            World Bank PIP
+
+        </a>
+
+    </p>
+
+
+</section>
+
+
+</main>
+
+
+<!-- =====================================================
+     FOOTER
+     ===================================================== -->
+
+<footer>
+
+    <div class="wrap">
+
+        Global Poverty Tracker
+
+        <br>
+
+        World Bank PIP data • Educational project
+
+    </div>
+
+</footer>
+
+
+<!-- MAIN JAVASCRIPT -->
+
+<script src="script.js"></script>
+
+
+</body>
+
+</html>
